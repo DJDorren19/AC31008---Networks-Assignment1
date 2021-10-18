@@ -1,13 +1,16 @@
 
 import socket
+import os
+from _thread import *
+import threading
 
 PORT = 6667
 HOST = '::1'
 numberOfClients = 3 #numbers of clients allowed to connect
 
-#Creates a socket
-sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
 
+#decalres the socket and server address
+sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
 server_adderess = (HOST, PORT)
 print('Starting up on', HOST , 'PORT', PORT)
 
@@ -17,7 +20,6 @@ sock.bind(server_adderess)
 
 #Allows for an x number of clients
 sock.listen(numberOfClients)
-
 
 #-----------------------------------------------------------------------------------------
 
@@ -45,68 +47,84 @@ class Clients:
 
 channelList = [] #Stores all the channels
 
-#Creates a new channel and then stores it in a list
-def createChannel(name, topic):
-	newChannel = Channel(name, topic)
-	channelList.append(newChannel)
-
+#Creates a new channel if does not exists, otherwise moves player to channel
+def manageChannels(newName, topic):
+	
+	inList = False
+	
+	if channelList:
+		for items in channelList:
+			if newName == items.name:
+				inList = True
+		if inList:
+			#move player to specified channel
+			print("Moving player")
+				
+		else:
+			newChannel = Channel(newName, topic)
+			channelList.append(newChannel)
+			print("Creating a new channel")
+	else:
+		newChannel = Channel(newName, topic)
+		channelList.append(newChannel)
+		print("Creating a new channel")
+		
 #-----------------------------------------------------------------------------------------
 
-#Will wait for someone/thing to connect
+#Version of python I am using (3.8) does not allow for switch statments so here we are.
+#And not sure if 3.10 is "allowed" for this assignment.
+def checkCommands(command):
+	if command[0] == "b'JOIN":
+		manageChannels(command[1], "No Topic Yet")
+	else:
+		print("Nothing, temp holder")
+	
+		#-----------------------------------------------------------------------------------------
+
+lockThread = threading.Lock() #Used to lock the thread
+
+#This function deals with whatever the client does
+def newClient(conn):
+	while True:
+		data = conn.recv(1024)
+		
+		print(str(data))
+		
+		#Controls user commands
+		command = str(data).split(" ")
+		checkCommands(command)
+		
+		#If no data being send then the thread in unlocked and connection closed.
+		if not data:	
+			lockThread.release()		
+			break
+		conn.sendall(data)
+		
+	conn.close()
+
+
+#waits for someone/thing to connect
 while True:
 	print('Waiting for a connection')
-	connection, client_address = sock.accept()
+	connection, client_address = sock.accept() #connection occured
 	
-	try:
-		print('Connection from', client_address)
-		
-		
-		########################TEST CODE FOR CHANNEL########################
-		
-		newClient = Clients("Daniel", client_address)
-		
-		createChannel("#test", "Bababooey")
-		
-		channelList[0].clientList.append(newClient)
-		
-		print("Channel: ", channelList[0].name)
-		
-		for i in channelList[0].clientList:
-			print("User: ", i.username, "Host: ", i.host)
-		
-		######################################################################
+	print('Connection from', client_address)
 	
-		
+	#locks the and then starts a new thread
+	lockThread.acquire() 
+	start_new_thread(newClient, (connection,))
 
-		#Gets the data and prints it.
-		while True:
-			data = connection.recv(1024)
-			
-			print(str(data))
-			if not data:
-				break
-			connection.sendall(data)
-					
-	#Closes the connection
-	finally:
-		print("Closing current connection")
-		connection.close()
+sock.close() #closes the socket
+
+
 
 #-----------------------------------------------------------------------------------------
 
 
 
 
-      		
-
 			
-	
-	
-	
-	
-	
-	
-	
+
 	
 	
 	
