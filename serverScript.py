@@ -37,20 +37,13 @@ class Channel:
 
 #Class to hold all of the client details
 class Clients:
-	
+
 	#Sets up the object
 	def __init__(self, nick):
 		self.nick = nick
-		self.channels = {}
+		self.connectedChannels = []
 
 #-----------------------------------------------------------------------------------------
-
-def createUser(nick):
-	newClient = Clients(nick)
-
-	
-#-----------------------------------------------------------------------------------------
-
 
 #Creates a new channel if does not exists, otherwise moves player to channel
 def manageChannels(newName, topic):
@@ -76,6 +69,12 @@ def manageChannels(newName, topic):
 		
 #-----------------------------------------------------------------------------------------
 
+#Creates the user based on the command and assigns them to the default channel
+def createUser(nick):
+	newClient = Clients(nick)
+	
+#-----------------------------------------------------------------------------------------
+
 #Version of python I am using (3.8) does not allow for switch statments so here we are.
 def checkCommands(command):
 	
@@ -90,7 +89,6 @@ def checkCommands(command):
 			manageChannels(command[1], "No Topic Yet") #creates a new channel
 		elif tempCommand == "NICK":
 			createUser(sentLine[1]) #Creates a new user
-
 	else:
 		pass
 	
@@ -112,7 +110,6 @@ def newClient(conn):
 		line = msg.split("\r\n")
 		checkCommands(line)
 
-		
 		#If no data being send then the thread in unlocked and connection closed.
 		if not data:	
 			lockThread.release()		
