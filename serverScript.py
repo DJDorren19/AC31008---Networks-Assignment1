@@ -7,6 +7,7 @@ import threading
 PORT = 6667
 HOST = '::1'
 numberOfClients = 3 #numbers of clients allowed to connect
+channelList = [] #Stores all the channels
 
 
 #decalres the socket and server address
@@ -31,7 +32,6 @@ class Channel:
 		self.name = name
 		self.clientList = [] #List to hold clients 
 		self.topic = topic
-		
 
 #-----------------------------------------------------------------------------------------
 
@@ -39,13 +39,18 @@ class Channel:
 class Clients:
 	
 	#Sets up the object
-	def __init__(self, username, host):
-		self.username = username
-		self.host = host
-		
+	def __init__(self, nick):
+		self.nick = nick
+		self.channels = {}
+
 #-----------------------------------------------------------------------------------------
 
-channelList = [] #Stores all the channels
+def createUser(nick):
+	newClient = Clients(nick)
+
+	
+#-----------------------------------------------------------------------------------------
+
 
 #Creates a new channel if does not exists, otherwise moves player to channel
 def manageChannels(newName, topic):
@@ -72,14 +77,24 @@ def manageChannels(newName, topic):
 #-----------------------------------------------------------------------------------------
 
 #Version of python I am using (3.8) does not allow for switch statments so here we are.
-#And not sure if 3.10 is "allowed" for this assignment.
 def checkCommands(command):
-	if command[0] == "b'JOIN":
-		manageChannels(command[1], "No Topic Yet")
-	else:
-		print("Nothing, temp holder")
 	
-		#-----------------------------------------------------------------------------------------
+	#for the number of lines in list
+	for lines in command:
+
+		#Splits up all the lines to be readable
+		sentLine = lines.split(" ")
+		tempCommand = sentLine[0]
+
+		if tempCommand == "JOIN":
+			manageChannels(command[1], "No Topic Yet") #creates a new channel
+		elif tempCommand == "NICK":
+			createUser(sentLine[1]) #Creates a new user
+
+	else:
+		pass
+	
+#-----------------------------------------------------------------------------------------
 
 lockThread = threading.Lock() #Used to lock the thread
 
@@ -88,18 +103,21 @@ def newClient(conn):
 	while True:
 		data = conn.recv(1024)
 		
-		print(str(data))
+		#print(str(data)) #prints raw data
 		
-		#Controls user commands
-		command = str(data).split(" ")
-		checkCommands(command)
+		#Decodes the data to make it more readable
+		msg = data.decode("utf-8")
+
+		#Splits it by line and checks if command
+		line = msg.split("\r\n")
+		checkCommands(line)
+
 		
 		#If no data being send then the thread in unlocked and connection closed.
 		if not data:	
 			lockThread.release()		
 			break
 		conn.sendall(data)
-		
 	conn.close()
 
 
@@ -116,19 +134,7 @@ while True:
 
 sock.close() #closes the socket
 
-
-
 #-----------------------------------------------------------------------------------------
-
-
-
-
-			
-
-	
-	
-	
-	
 	
 		
 		
