@@ -3,24 +3,12 @@ import socket
 import os
 from _thread import *
 import threading
+import re
 
-PORT = 6667
-HOST = '::1'
-numberOfClients = 3 #numbers of clients allowed to connect
+#Global lists (Very secure /s)
 channelList = [] #Stores all the channels
+clientList = [] #Stores all the clients
 
-
-#decalres the socket and server address
-sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-server_adderess = (HOST, PORT)
-print('Starting up on', HOST , 'PORT', PORT)
-
-#Allows to reuse the socket. Big POG and binds scoket to port.
-sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-sock.bind(server_adderess)
-
-#Allows for an x number of clients
-sock.listen(numberOfClients)
 
 #-----------------------------------------------------------------------------------------
 
@@ -37,118 +25,159 @@ class Channel:
 
 #Class to hold all of the client details
 class Clients:
-
+	
 	#Sets up the object
-	def __init__(self, nick):
+	def __init__(self, nick, clientAddress):
 		self.nick = nick
 		self.connectedChannels = []
+		self.userName = {}
+		self.host = clientAddress
 
 #-----------------------------------------------------------------------------------------
 
-#Creates a new channel if does not exists, otherwise moves player to channel
-def manageChannels(newName, topic):
+
 	
-	inList = False
 	
-	if channelList:
-		for items in channelList:
-			if newName == items.name:
-				inList = True
-		if inList:
-			#move player to specified channel
-			print("Moving player")
-				
+
+
+
+class Server:
+	
+	#global variables
+	sock = None 
+	
+	#Server constructor
+	def __init__(self):
+
+		PORT = 6667
+		HOST = '::1'
+		numberOfClients = 3 #numbers of clients allowed to connect
+
+
+		#decalres the socket and server address
+		self.sock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+		server_adderess = (HOST, PORT)
+		print('Starting up on', HOST , 'PORT', PORT)
+
+		#Allows to reuse the socket. Big POG and binds scoket to port.
+		self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+		self.sock.bind(server_adderess)
+
+		#Allows for an x number of clients
+		self.sock.listen(numberOfClients)
+
+	#-----------------------------------------------------------------------------------------
+
+	#Simple function to just create user and add them to the list of clients on server
+	def createClient(self, nick, clientAddress):
+		self.clientNew = Clients(nick, clientAddress)
+		clientList.append(self.clientNew)
+
+	#-----------------------------------------------------------------------------------------
+
+	#Creates a new channel if does not exists, otherwise moves player to channel
+	def manageChannels(self, newName, topic):
+		
+		inList = False #used to see if channel already exists
+
+		if channelList:
+			#checks if channel already exists
+			for items in channelList:
+				if newName == items.name:
+					inList = True
+			if inList:
+				#move player to specified channel
+				print("Moving player")	
+			else:
+				newChannel = Channel(newName, topic)
+				channelList.append(newChannel)
+				print("Creating a new channel")
 		else:
 			newChannel = Channel(newName, topic)
 			channelList.append(newChannel)
 			print("Creating a new channel")
-	else:
-		newChannel = Channel(newName, topic)
-		channelList.append(newChannel)
-		print("Creating a new channel")
-		
-#-----------------------------------------------------------------------------------------
 
-#Creates the user based on the command and assigns them to the default channel
-def createUser(nick):
-	newClient = Clients(nick)
+	#-----------------------------------------------------------------------------------------
+
+	#Changes the username of the client
+	def applyUsername(self, username, clientAdderss):
+		for clients in clientList:
+			if clients.host == clientAdderss:
+				clients.userName = username
+
+	#Version of python I am using (3.8) does not allow for switch statments so here we are.
+	def checkCommands(self, command, clientAddress):
+		
+		#for the number of lines in list
+		for lines in command:
+
+			#Splits up all the lines to be readable
+			sentLine = lines.split(" ")
+			tempCommand = sentLine[0]
+
+			if tempCommand == "JOIN":
+				self.manageChannels(sentLine[1], "No Topic Yet") #creates a new channel
+			elif tempCommand == "NICK":
+				self.createClient(sentLine[1], clientAddress) #Creates a new user
+			elif tempCommand == "USER":
+				print("NEW USER", sentLine[1])
+
+				self.applyUsername(sentLine[1], clientAddress)
+
+
+
+				#it would get the user by host and then change their username
+
+		else:
+			pass
+
+	#-----------------------------------------------------------------------------------------
+
+	#This function deals with whatever the client does
+	def newClient(self, conn, client_address):
+		while True:
+			data = conn.recv(1024)
+			
+			#print(str(data)) #prints raw data
+			
+			#Decodes the data to make it more readable and splits it by line
+			msg = data.decode("utf-8")
+			line = msg.split("\r\n")
+		
+			#Splits the client's address
+			strClientAddress = str(client_address)
+			clientAddress = strClientAddress.split(" ")
+			clientAddressSubbed  = re.sub(',', '', clientAddress[1])
+
+			#checks if/what command has been used
+			self.checkCommands(line, clientAddressSubbed)
+
+			#If no data being send and connection closed.
+			if not data:			
+				break
+			conn.sendall(data)
+		conn.close()	
+
+	def startServer(self):
+		#waits for someone/thing to connect
+		while True:
+			print('Waiting for a connection')
+			connection, client_address = self.sock.accept() #connection occured
+			
+			print('Connection from', client_address)
+			
+			#Starts a new thread
+			start_new_thread(self.newClient, (connection, client_address))
+
+		sock.close() #closes the socket
+
+	#-----------------------------------------------------------------------------------------
+
+
+#Main calls the main server class to run the server
+def main():
+	x= Server()
+	x.startServer()
 	
-#-----------------------------------------------------------------------------------------
-
-#Version of python I am using (3.8) does not allow for switch statments so here we are.
-def checkCommands(command):
-	
-	#for the number of lines in list
-	for lines in command:
-
-		#Splits up all the lines to be readable
-		sentLine = lines.split(" ")
-		tempCommand = sentLine[0]
-
-		if tempCommand == "JOIN":
-			manageChannels(command[1], "No Topic Yet") #creates a new channel
-		elif tempCommand == "NICK":
-			createUser(sentLine[1]) #Creates a new user
-	else:
-		pass
-	
-#-----------------------------------------------------------------------------------------
-
-lockThread = threading.Lock() #Used to lock the thread
-
-#This function deals with whatever the client does
-def newClient(conn):
-	while True:
-		data = conn.recv(1024)
-		
-		#print(str(data)) #prints raw data
-		
-		#Decodes the data to make it more readable
-		msg = data.decode("utf-8")
-
-		#Splits it by line and checks if command
-		line = msg.split("\r\n")
-		checkCommands(line)
-
-		#If no data being send then the thread in unlocked and connection closed.
-		if not data:	
-			lockThread.release()		
-			break
-		conn.sendall(data)
-	conn.close()
-
-
-#waits for someone/thing to connect
-while True:
-	print('Waiting for a connection')
-	connection, client_address = sock.accept() #connection occured
-	
-	print('Connection from', client_address)
-	
-	#locks the and then starts a new thread
-	lockThread.acquire() 
-	start_new_thread(newClient, (connection,))
-
-sock.close() #closes the socket
-
-#-----------------------------------------------------------------------------------------
-	
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
+#Executes the main function
+main()
