@@ -24,12 +24,17 @@ parser.add_argument("--channel", help="Please enter the name of the channel you 
 
 
 def connect():
-    ircsock.connect(server, port)
-    print("Unable to connect to server. Quitting")
+        try:
+        ircsock.connect((server, port))
+    except:
+        print("Unable to connect to server. Quitting")
+        quit()
+    else:
+        print("Connecting to server")
+
     ircsock.send(bytes("USER " + botnick + " " + botnick + " " + botnick + " : Hey there, I'm a bot :-)\r\n", "UTF-8"))
     ircsock.send(bytes("NICK " + botnick + "\r\n", "UTF-8"))
     ircsock.recv(2048, "UTF-8")
-
 
 def joinchan(chan):
     ircsock.send(bytes("JOIN " + chan + "\r\n", "UTF-8"))
