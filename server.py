@@ -4,6 +4,8 @@ import os
 from _thread import *
 import threading
 import re
+from datetime import datetime
+
 
 
 #Map used to store all the error codes
@@ -25,9 +27,11 @@ errorCodes = {
 	'ERR_NOTONCHANNEL': 442, #NOT IMPLAMENTED
 	'ERR_USERONCHANNEL': 443, #NOT IMPLAMENTED
 	'ERR_NOLOGIN': 444, #NOT IMPLAMENTED
-	'ERR_NOTREGISTERED': 451, #SHOULD HAVE THE FOUNDATION FOR THIS BAD BOY
+	'ERR_NOTREGISTERED': 451,
 
-	'ERR_NEEDMOREPARAMS': 461 #NOT IMPLAMENTED/LIMITED IMPLAMENTATION
+	'ERR_NEEDMOREPARAMS': 461,
+	'ERR_ALREADYREGISTERED': 462,
+	'ERR_CHANNELISFULL': 471
 }
 
 #Map used to store all the reply codes
@@ -36,8 +40,10 @@ replyCodes = {
 	'RPL_WELCOME': 1,
 	'RPL_LUSERCHANNELS': 254,
 	'RPL_NOTOPIC': 331,
-	'RPL_TOPIC': 332
-	
+	'RPL_TOPIC': 332,
+	'RPL_NAMERPLY': 353,
+	'RPL_ENDOFNAMES': 366
+
 }
 
 #Global lists (Very secure /s)
@@ -136,17 +142,21 @@ class Server:
 		if client not in channel.clientList:
 			client.connectedChannels.append(channel)
 			channel.clientList.append(client)
-			print("moving client to channel") #DELETE THIS FOR FINAL VERSION
+
+			self.printToServer(client, "Moving client to channel: " + newChannel)
+		else:
+			self.printToServer(client, "Client already in channel: " + newChannel)
 
 	#Makese sure the client is registered
 	def registerClient(self, client):
 		if client in clientList:
 			if client.nick and client.userName:
 
-				print(client.nick, client.userName)
-
 				#Registers the client and sends welcome message being sent to the user
 				client.registered = True
+
+				#Message sent to the terminal
+				self.printToServer(client, "Registered Client " + "")
 				
 				msg = str(replyCodes["RPL_WELCOME"]) + " " +"Welcome to the Internet Relay Network\n" + \
 					client.nick + "!" + client.userName + "@" + client.host
@@ -167,7 +177,7 @@ class Server:
 		#Private messages the client
 		if privateMsg:
 			#Sets up the message to be sent, JACK should be the sender's name, which could be another user or server 
-			msg = ":" + senderName + "!" + client.userName + "@" + str(client.host) + " PRIVMSG "
+			msg = ":" + senderName + "!" + str(client.userName) + "@" + str(client.host) + " PRIVMSG "
 			msg = msg+message+"\r\n"
 			connection.send(msg.encode('utf-8'))
 
@@ -221,13 +231,23 @@ class Server:
 
 	#-----------------------------------------------------------------------------------------
 
+	#Deals with the changing of username
+	def user(self, client, username):
+		if not client.userName:
+			self.setUsername(username, client) #Changes the username of client
+		else:
+			message = str(errorCodes["ERR_ALREADYREGISTERED"]) + "" + "" + " :You may not register"
+			self.sendMessage(client, message, True)
+
+	#-----------------------------------------------------------------------------------------
+
 	#Creates a new channel if does not exists, otherwise moves player to channel
 	def handleChannels(self, newName, client):
 		
 		channels = len(client.connectedChannels) #number of channels client is connected to
 		inList = False #used to see if channel already exists
 		newChannel = {}
-
+	
 		#checks if channel already exists
 		if channelList:
 			for items in channelList:
@@ -241,7 +261,7 @@ class Server:
 		#channel name invalid. ADD MORE INVALID CHARACTERS
 		if newName[0] != "#":
 			return "ERR_NOSUCHCHANNEL"
-		
+
 		#if it does not exits, create it and add to list of channels
 		if not inList:
 			newChannel = Channel(newName)
@@ -262,9 +282,8 @@ class Server:
 				message = str(errorCodes['ERR_NOSUCHCHANNEL']) + " " + channel + " :No such channel"
 				self.sendMessage(client, message, True)
 
+		
 	#-----------------------------------------------------------------------------------------
-
-
 
 	#Used to alter the topic of a channel #NEED TO ADD ERROR CHECKING FOR CHANNEL NAME
 	def handleTopic(self, sentLines, client):
@@ -285,7 +304,6 @@ class Server:
 					
 			#Clears the topic of a certain channel
 			elif numberOfLines == 3:
-				print(sentLines[2])
 				if sentLines[2] == "::":
 					channel.topic = ""
 				
@@ -353,9 +371,96 @@ class Server:
 
 	#-----------------------------------------------------------------------------------------
 
+	#Deals with printing the replies for NAMES
+	def namesReplies(self, reply, client, tempList, channelName):
+
+		if reply == "RPL_ENDOFNAMES":
+			message =  str(replyCodes["RPL_ENDOFNAMES"]) + " " + tempList + " :End of /NAMES list" 
+			self.sendMessage(client, message, False)
+		
+		elif reply == "RPL_NAMERPLY":
+			message =  str(replyCodes["RPL_NAMERPLY"]) + " " + channelName+ " :" +  tempList
+			self.sendMessage(client, message, False)
+
+	#Called when the NAMES command is used, should make the switch easier to read
+	def names(self, sentLines, client):
+		
+		#Locals
+		splitLines = sentLines[1].split(",")
+		linesLength = len(splitLines)
+		tempList = ""
+
+		#if only /NAMES is sent
+		if linesLength == 1:
+
+			#checks is param was given
+			if splitLines[0][0] != "#":
+				channelName = ""
+
+				#if not then loops for the whole list of channels
+				for channels in channelList:
+					channelName = channels.name
+
+					tempList = tempList + channelName + " :"
+
+					for clinets in channels.clientList:
+						tempList = tempList + "@" + clinets.nick
+
+					tempList = tempList + "\n"
+				
+				self.namesReplies("RPL_ENDOFNAMES", client, tempList, "")
+
+			else:
+				thisChannel = self.getChannel(splitLines[0])
+				#If the channel exists, print all the users in that channel
+				if thisChannel:
+					for clinets in thisChannel.clientList:
+						tempList = tempList + " @" + clinets.nick
+
+				self.namesReplies("RPL_NAMERPLY", client, tempList, splitLines[0])
+
+		#if trying to get clients in specific channel
+		elif linesLength > 1:
+
+			temp = 0
+
+			while temp < linesLength:
+
+				channelName = splitLines[temp]
+				tempList =""
+				
+				if channelName[0] == "#":
+					#Gets the client list in the channel and then 
+					thisChannel = self.getChannel(channelName)
+
+				#If the channel exists, print all the users in that channel
+				if thisChannel:
+					for clinets in thisChannel.clientList:
+						tempList = tempList + " @" + clinets.nick
+
+					self.namesReplies("RPL_NAMERPLY", client, tempList, channelName)
+			
+				#If not then reply with end of names
+				else:
+					self.namesReplies("RPL_ENDOFNAMES", client, channelName, "")
+
+				temp+=1
+		
+	#-----------------------------------------------------------------------------------------
+
+	#Used to sent whatever the client does to the server
+	def printToServer(self, client, message):
+		time = datetime.now()
+		currentTime = time.strftime("%H:%M:%S")
+		print(currentTime, ": "+ str(client.nick) + " :" + str(client.userName) +"@" + str(client.host) + " :" + str(message))
+
+	#-----------------------------------------------------------------------------------------
+
 	#Determines what command has been entered by the client
 	def checkCommands(self, command, client):
-	
+		
+		clientRegistered = client.registered
+
 		#for the number of lines in list
 		for lines in command:
 
@@ -366,40 +471,48 @@ class Server:
 			#Ignores white spaces or "CAP" - whatever that means
 			if tempCommand == "" or tempCommand == "CAP":
 				break
-
-			#Command used to create/join a channel
-			if tempCommand == "JOIN":
-				newChannel = sentLine[1]
-				self.join(newChannel, client)
 			
 			#Command used to set/change the nick
-			elif tempCommand == "NICK": 
+			if tempCommand == "NICK": 
 				newNick = sentLine[1]
 				self.nick(newNick, client)
 
 			#Command used to set the username
 			elif tempCommand == "USER":
+				self.user(client, sentLine[1])
 				self.setUsername(sentLine[1], client) #Changes the username of client
 
+			#Command used to create/join a channel
+			elif tempCommand == "JOIN" and clientRegistered:
+				newChannel = sentLine[1]
+				self.join(newChannel, client)
+
 			#LUSER commands
-			elif tempCommand == "LUSER":
+			elif tempCommand == "LUSER" and clientRegistered:
 				if len(sentLine) == 2:
 					self.lUser(client)
-				else:
-					#probably some error here
-					pass
 			
 			#TOPIC commands
-			elif tempCommand == "TOPIC":
+			elif tempCommand == "TOPIC" and clientRegistered:
 				self.handleTopic(sentLine, client)
+
+			#used to list visible channels/clients
+			elif tempCommand == "NAMES" and clientRegistered:
+				self.names(sentLine, client)
 
 			#Command used to quit server
 			elif tempCommand == "QUIT":
 				pass
+			
+			#if the client is not registered and tries to use commands
+			elif not clientRegistered:
+				message = str(errorCodes["ERR_NOTREGISTERED"]) + "" + " " + ":You have not registered"
+				self.sendMessage(client, message, True)
 
 			else: #Message is not known to the server
 				message = str(errorCodes['ERR_UNKNOWNCOMMAND']) + " " + tempCommand + " :Unknown command"
-				self.sendMessage(client, message, False)
+				self.sendMessage(client, message, True)
+			
 
 	#-----------------------------------------------------------------------------------------
 
@@ -407,7 +520,7 @@ class Server:
 	def newClient(self, conn, client_address):
 
 		clientWelcomed = False #Only used to welcome the client
-		print("NEW THREAD")
+		createdClient = False
 
 		while True:
 			data = conn.recv(self.ircMessagesLength)
@@ -420,9 +533,15 @@ class Server:
 			clientAddress = str(client_address).split(" ")
 			clientAddressSubbed  = re.sub(',', '', clientAddress[1]) #gets rid of the ','
 
-			#creates a new client
-			self.createClient(conn, clientAddressSubbed)
+			#creates a new client once for this address
+			if not createdClient:
+				self.createClient(conn, clientAddressSubbed)
+				createdClient = True
+
 			newClient = self.getClient(clientAddressSubbed) #gets the new client for later use
+
+			self.printToServer(newClient, msg)
+
 
 			#checks if/what command has been used
 			self.checkCommands(line, newClient)
