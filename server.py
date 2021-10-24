@@ -6,27 +6,38 @@ import threading
 import re
 
 
-#####WHAT TO DO
-#	YOU ADDED CONNECTION TO CLIENT SO MAKE THE FUNCTIONS BETTER
-
-
 #Map used to store all the error codes
-error_Codes = {
+errorCodes = {
 
+	'ERR_NOSUCHNICK': 401, #NOT IMPLAMENTED FULLY - JUST CALL BUT NO CASE
+	'ERR_NOSUCHCHANNEL': 403,
+	'ERR_CANNOTSENDTOCHAN': 404, #NOT IMPLAMENTED
+	'ERR_TOOMANYCHANNELS': 405,
+	'ERR_TOOMANYTARGETS': 407, #NOT IMPLAMENTED
+	"ERR_NORECIPIENT": 411, #NOT IMPLAMENTED
+	"ERR_NOTEXTTOSEND": 412, #NOT IMPLAMENTED
+	"ERR_UNKNOWNCOMMAND": 421,
 	'ERR_NONICKNAMEGIVEN': 431,
-	'ERR_ERRONEUSN'
+	'ERR_ERRONEUSNICKNAME' : 432,
 	'ERR_NICKNAMEINUSE': 433, 
-	'ERR_NICKCOLLISION': 436, 
-	'ERR_RESTRICTED': 484
 
+	'ERR_USERNOTINCHANNEL': 441,#NOT IMPLAMENTED
+	'ERR_NOTONCHANNEL': 442, #NOT IMPLAMENTED
+	'ERR_USERONCHANNEL': 443, #NOT IMPLAMENTED
+	'ERR_NOLOGIN': 444, #NOT IMPLAMENTED
+	'ERR_NOTREGISTERED': 451, #SHOULD HAVE THE FOUNDATION FOR THIS BAD BOY
 
+	'ERR_NEEDMOREPARAMS': 461 #NOT IMPLAMENTED/LIMITED IMPLAMENTATION
 }
 
 #Map used to store all the reply codes
-reply_codes = {
+replyCodes = {
 
 	'RPL_WELCOME': 1,
-
+	'RPL_LUSERCHANNELS': 254,
+	'RPL_NOTOPIC': 331,
+	'RPL_TOPIC': 332
+	
 }
 
 #Global lists (Very secure /s)
@@ -39,7 +50,7 @@ clientList = [] #Stores all the clients
 class Channel:
 	def __init__(self, name):
 		self.name = name
-		self.clientList = [] #List to hold clients 
+		self.clientList = [] #List to hold clients in channel
 		self.topic = {}
 
 #-----------------------------------------------------------------------------------------
@@ -62,7 +73,8 @@ class Server:
 	
 	#global variables
 	sock = None 
-	ircMessagesLength = 512 #Pretty sure this is the max number of characters allowed
+	ircMessagesLength = 512 #Pretty sure this is the max number of characters allowed by rfc2812
+	maxChannels = 4 #max channels a user is allwed to join
 	
 	#Server constructor
 	def __init__(self):
@@ -92,10 +104,10 @@ class Server:
 	
 	#sets the nick of the client
 	def setNick(self, nick, client):
-		if client in clientList:
-			client.nick = nick
+		for clients in clientList:
+			if clients.host == client.host:
+				clients.nick = nick
 
-		
 	#Gets the client by their host (I know this is stupid but it's a bandaid solution righ now)
 	def getClient(self, host):
 		if clientList:
@@ -105,17 +117,65 @@ class Server:
 
 	#Sets the client's username
 	def setUsername(self, username, client):
-		if client in clientList:
-			client.username = username
-			print(client.username)
+		for clients in clientList:
+			if clients.host == client.host:
+				clients.userName = username
+
+	#gets the channel by searching with channel name
+	def getChannel(self, channelName):
+		if channelList:
+			for items in channelList:
+				if channelName == items.name:
+					return items
+
+	#Adds the channel to client list of channels
+	def addClientChannel(self, newChannel, client):
+		
+		channel = self.getChannel(newChannel)
+
+		if client not in channel.clientList:
+			client.connectedChannels.append(channel)
+			channel.clientList.append(client)
+			print("moving client to channel") #DELETE THIS FOR FINAL VERSION
 
 	#Makese sure the client is registered
 	def registerClient(self, client):
 		if client in clientList:
-				client.registered = True
+			if client.nick and client.userName:
 
-				#Client is registered, here we send the 
-				#RPL_WECLOME code/message
+				print(client.nick, client.userName)
+
+				#Registers the client and sends welcome message being sent to the user
+				client.registered = True
+				
+				msg = str(replyCodes["RPL_WELCOME"]) + " " +"Welcome to the Internet Relay Network\n" + \
+					client.nick + "!" + client.userName + "@" + client.host
+				self.sendMessage(client, msg, False)
+
+				return client.registered
+
+	#-----------------------------------------------------------------------------------------
+	
+	#Used to send messages to the client
+	def sendMessage(self, client, message, privateMsg=True):
+
+		connection = client.connection
+		###########################################
+		senderName = "JACK" #SHOULD NOT BE JACK BUT THE CLIENT WHO IS SENDING THE MESSAGE OR SERVER
+		###########################################
+
+		#Private messages the client
+		if privateMsg:
+			#Sets up the message to be sent, JACK should be the sender's name, which could be another user or server 
+			msg = ":" + senderName + "!" + client.userName + "@" + str(client.host) + " PRIVMSG "
+			msg = msg+message+"\r\n"
+			connection.send(msg.encode('utf-8'))
+
+		#Notice message
+		else:
+			msg = ":" + senderName + "!" + client.userName + "@" + str(client.host) + " NOTICE "
+			msg = msg+message+"\r\n"
+			connection.send(msg.encode('utf-8'))
 
 	#-----------------------------------------------------------------------------------------
 
@@ -124,27 +184,178 @@ class Server:
 
 		#Another "switch" that looks for any issues with nick
 		if clientList: #checks if the nick is already taken
-
 			for clients in clientList:
 				if clients.nick == nick:
 					return "ERR_NICKNAMEINUSE"	
 
 		if len(nick) > 9: #Checks if the nick name is too long
-			#send the ERR_ERRONEUSNICKNAME here
-			pass 
-
+			return "ERR_ERRONEUSNICKNAME"
+ 
 		if not nick: #Checks if nick is empty
-			#send the ERR_NONICKNAMEGIVEN here
-			pass
+			return "ERR_NONICKNAMEGIVEN"
 
 		#If no issues
 		return "NO_ERROR"
-		
+
+	#Checks what nick error it is and sends the correspoding message
+	def checkNickError(self, anyError, client, nick):
+
+		#Think these should be private messages
+
+		# NO ACTUAL CALL FOR THIS YET
+		if anyError == "ERR_NOSUCHNICK":
+			message = str(errorCodes["ERR_NOSUCHNICK"]) + " " + nick + " :No such nick"
+			self.sendMessage(client, message, True)
+
+		if anyError == "ERR_NICKNAMEINUSE":
+			message = str(errorCodes['ERR_NICKNAMEINUSE']) + " " + nick + " :Nickname is already in use"
+			self.sendMessage(client, message, True)
+
+		if anyError == "ERR_NONICKNAMEGIVEN":
+			message = str(errorCodes['ERR_NONICKNAMEGIVEN']) + " :No nickname given"
+			self.sendMessage(client, message, True)
+
+		if anyError == "ERR_ERRONEUSNICKNAME":
+			 message = str(errorCodes['ERR_ERRONEUSNICKNAME']) + " " + nick + " :Erroneus nickname"
+			 self.sendMessage(client, message, True)
+
 	#-----------------------------------------------------------------------------------------
-	
-	#Determines what command has been entered by the client
-	def checkCommands(self, command, client, conn):
+
+	#Creates a new channel if does not exists, otherwise moves player to channel
+	def handleChannels(self, newName, client):
 		
+		channels = len(client.connectedChannels) #number of channels client is connected to
+		inList = False #used to see if channel already exists
+		newChannel = {}
+
+		#checks if channel already exists
+		if channelList:
+			for items in channelList:
+				if newName == items.name:
+					inList = True
+
+		#checks if client can join anymore channels
+		if channels > self.maxChannels:
+			return "ERR_TOOMANYCHANNELS"
+
+		#channel name invalid. ADD MORE INVALID CHARACTERS
+		if newName[0] != "#":
+			return "ERR_NOSUCHCHANNEL"
+		
+		#if it does not exits, create it and add to list of channels
+		if not inList:
+			newChannel = Channel(newName)
+			channelList.append(newChannel)
+
+		#No errors occured
+		return "NO_ERROR"
+
+
+	#Checks what channel error it is and sends the correspoding message
+	def checkChannelError(self, anyError, client, channel):
+		if channel:
+			if anyError == "ERR_TOOMANYCHANNELS":
+				message = str(errorCodes['ERR_TOOMANYCHANNELS']) + " " + channel + " :You have joined too many channels"
+				self.sendMessage(client, message, True)
+
+			if anyError == "ERR_NOSUCHCHANNEL":
+				message = str(errorCodes['ERR_NOSUCHCHANNEL']) + " " + channel + " :No such channel"
+				self.sendMessage(client, message, True)
+
+	#-----------------------------------------------------------------------------------------
+
+
+
+	#Used to alter the topic of a channel #NEED TO ADD ERROR CHECKING FOR CHANNEL NAME
+	def handleTopic(self, sentLines, client):
+
+		numberOfLines = len(sentLines)
+		channelName = sentLines[1]
+		channel = self.getChannel(channelName)
+
+		#if channel is not empty
+		if channel:
+
+			#Shows the topic of certain a channel
+			if numberOfLines == 2:
+				if not channel.topic:
+					self.checkTopicError("RPL_NOTOPIC", client, channel)
+				else:
+					self.checkTopicError("RPL_TOPIC", client, channel)
+					
+			#Clears the topic of a certain channel
+			elif numberOfLines == 3:
+				print(sentLines[2])
+				if sentLines[2] == "::":
+					channel.topic = ""
+				
+					self.checkTopicError("RPL_NOTOPIC", client, channel)
+
+			#Replaces the topic of a certain channel
+			elif numberOfLines == 4:
+				if sentLines[2] == "::another":
+					newTopic = sentLines[3]
+					channel.topic = newTopic
+
+					self.checkTopicError("RPL_TOPIC", client, channel)
+				else:
+					message = str(errorCodes['ERR_UNKNOWNCOMMAND']) + " " + sentLines[2] + " :Unknown command"
+					self.sendMessage(client, message, False)
+		else:	
+			self.checkTopicError("ERR_NEEDMOREPARAMS", client, channel)
+		
+
+	#Deals sending reply/error messages for topics
+	def checkTopicError(self, anyError, client, channel):
+
+		if anyError == "RPL_TOPIC":
+			msg = str(replyCodes["RPL_TOPIC"]) + " " + channel.name + " :" + channel.topic 
+			self.sendMessage(client, msg, True)
+
+		if anyError == "RPL_NOTOPIC":
+			msg = str(replyCodes["RPL_NOTOPIC"]) + " " + channel.name + " :No topic is set"
+			self.sendMessage(client, msg, True)
+		
+		#Quite redundant as similar message will be sent later
+		if anyError == "ERR_NEEDMOREPARAMS":
+			message = str(errorCodes["ERR_NEEDMOREPARAMS"]) + " " + "TOPIC" + " :Not enought parameters"
+			self.sendMessage(client, message, False)
+
+	#-----------------------------------------------------------------------------------------
+
+	#Called when the JOIN command is used, should make the switch easier to read
+	def join(self, newChannel, client):
+		anyError = self.handleChannels(newChannel, client)
+
+		if anyError == "NO_ERROR":
+			self.addClientChannel(newChannel, client)
+		else:
+			self.checkChannelError(anyError, client, newChannel)
+
+	#Called when the NICK command is used, should make the switch easier to read
+	def nick(self, newNick, client):
+		anyError = self.handleNick(newNick) 
+		
+		if anyError == "NO_ERROR":
+			self.setNick(newNick, client)
+		else:
+			self.checkNickError(anyError, client, newNick)
+
+	#Called when the LUSER command is used, should make the switch easier to read
+	def lUser(self, client):
+		noChannels = 0
+		for channels in channelList:
+			noChannels+=1
+
+		#Sends the number of users in channel reply
+		msg = str(replyCodes["RPL_LUSERCHANNELS"]) + " " + str(noChannels) + " :channels formed"
+		self.sendMessage(client, msg, True)
+
+	#-----------------------------------------------------------------------------------------
+
+	#Determines what command has been entered by the client
+	def checkCommands(self, command, client):
+	
 		#for the number of lines in list
 		for lines in command:
 
@@ -152,67 +363,52 @@ class Server:
 			sentLine = lines.split(" ")
 			tempCommand = sentLine[0]
 
-			#A "switch" to see what command has been entered
+			#Ignores white spaces or "CAP" - whatever that means
+			if tempCommand == "" or tempCommand == "CAP":
+				break
+
+			#Command used to create/join a channel
 			if tempCommand == "JOIN":
-				if sentLine[1][0] == "#":
-					self.manageChannels(sentLine[1]) #creates a new channel
-				else:
-					#ERROR FOR BAD NAMING PRACTICE, NO # AT THE START FOR CHANNEL
-					pass
+				newChannel = sentLine[1]
+				self.join(newChannel, client)
+			
+			#Command used to set/change the nick
+			elif tempCommand == "NICK": 
+				newNick = sentLine[1]
+				self.nick(newNick, client)
 
-			elif tempCommand == "NICK":
-				#Checks if nick is already taken (should change NO_ERROR to something else)
-				anyError = self.handleNick(sentLine[1]) 
-				if anyError == "NO_ERROR":
-					self.setNick(sentLine[1], client)
-				else:
-					self.checkError(anyError)
-
-
+			#Command used to set the username
 			elif tempCommand == "USER":
 				self.setUsername(sentLine[1], client) #Changes the username of client
-			else:
-				pass #nothing
 
-	#-----------------------------------------------------------------------------------------
+			#LUSER commands
+			elif tempCommand == "LUSER":
+				if len(sentLine) == 2:
+					self.lUser(client)
+				else:
+					#probably some error here
+					pass
+			
+			#TOPIC commands
+			elif tempCommand == "TOPIC":
+				self.handleTopic(sentLine, client)
 
-	def checkError(anyError):
+			#Command used to quit server
+			elif tempCommand == "QUIT":
+				pass
 
-		if anyError == "ERR_NICKNAMEINUSE":
-			pass
-
-
-
-
-
-	
-	#Creates a new channel if does not exists, otherwise moves player to channel
-	def manageChannels(self, newName):
-		
-		inList = False #used to see if channel already exists
-
-		if channelList:
-			#checks if channel already exists
-			for items in channelList:
-				if newName == items.name:
-					inList = True
-			if inList:
-				#move player to specified channel
-				print("Moving player")	
-			else:
-				newChannel = Channel(newName)
-				channelList.append(newChannel)
-				print("Creating a new channel")
-		else:
-			newChannel = Channel(newName)
-			channelList.append(newChannel)
-			print("Creating a new channel")			
-	
+			else: #Message is not known to the server
+				message = str(errorCodes['ERR_UNKNOWNCOMMAND']) + " " + tempCommand + " :Unknown command"
+				self.sendMessage(client, message, False)
 
 	#-----------------------------------------------------------------------------------------
 
 	#This function deals with whatever the client does
 	def newClient(self, conn, client_address):
+
+		clientWelcomed = False #Only used to welcome the client
+		print("NEW THREAD")
+
 		while True:
 			data = conn.recv(self.ircMessagesLength)
 			
@@ -221,8 +417,7 @@ class Server:
 			line = msg.split("\r\n")
 		
 			#Splits the client's address
-			strClientAddress = str(client_address)
-			clientAddress = strClientAddress.split(" ")
+			clientAddress = str(client_address).split(" ")
 			clientAddressSubbed  = re.sub(',', '', clientAddress[1]) #gets rid of the ','
 
 			#creates a new client
@@ -230,16 +425,15 @@ class Server:
 			newClient = self.getClient(clientAddressSubbed) #gets the new client for later use
 
 			#checks if/what command has been used
-			self.checkCommands(line, newClient, conn)
-
-			#Registers the client 
-			self.registerClient(newClient)
-
+			self.checkCommands(line, newClient)
 			
+			#Makes sure that this fucntion is ran once and registers the client
+			if not clientWelcomed:
+				clientWelcomed = self.registerClient(newClient)
+
 			#If no data being send and connection closed.
 			if not data:			
 				break
-			conn.sendall(data)
 		conn.close()	
 
 	#Function  used to establish the server
@@ -254,7 +448,6 @@ class Server:
 		sock.close() #closes the socket
 
 	#-----------------------------------------------------------------------------------------
-
 
 #Main calls the main server class to run the server
 def main():
