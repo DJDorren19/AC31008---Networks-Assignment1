@@ -1,78 +1,118 @@
-#!/usr/bin/python3import socket
 import socket
-import random
-import datetime
 import time
+import datetime
+import random
 import argparse
 
 ircsock = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
-
-server = "127.0.0.1"
+# server = "fc00:1337::17"
+server = "::1"
 port = 6667
-channel = '#test'
-
+channel = "#test"
 botnick = "Bot-Tom"
-exitcode = "See you later!" +botnick
+exit = "See you later" + botnick
 users = []
-file= 'facts.txt'
+file = 'randomfacts.txt'
 
-parser =argparse.ArgumentParser(description='Bot command line parameters')
-parser.add_argument("--hostname", help='Please enter the server the bot should connect to', required=False, default=server)
-parser.add_argument("--port", type=int, help="Please enter the port you wish to connect to", required=False, default=port)
-parser.add_argument("--name", help="Please enter the name you want to call the Bot", required=False, default=botnick)
-parser.add_argument("--channel", help="Please enter the name of the channel you wish to join", required=False, default=channel)
+#Command line arguements so users can enter own details
+parser = argparse.ArgumentParser(description='Command line parameters')
+parser.add_argument("--hostname", help="Please enter the IP address of the server", required=False, default=server)
+parser.add_argument("--portnumber", type=int, help="Please enter the port number", required=False, default=port)
+parser.add_argument("--channelname", help="Please enter the name of the channel", required=False, default=channel)
+parser.add_argument("--botname", help="Please enter the name of the Bot",required=False, default=botnick)
 
+arg = parser.parse_args()
+server = arg.hostname
+port = arg.portnumber
+channel = arg.channelname
+botnick = arg.botname
 
 def connect():
-        try:
-        ircsock.connect((server, port))
-    except:
-        print("Unable to connect to server. Quitting")
-        quit()
-    else:
-        print("Connecting to server")
-
-    ircsock.send(bytes("USER " + botnick + " " + botnick + " " + botnick + " : Hey there, I'm a bot :-)\r\n", "UTF-8"))
+    ircsock.connect((server, port))
+    ircsock.send(bytes("USER " + botnick + "\r\n", "UTF-8"))
     ircsock.send(bytes("NICK " + botnick + "\r\n", "UTF-8"))
-    ircsock.recv(2048, "UTF-8")
+    confirm = ircsock.recv(2048).decode("UTF-8")
+    print("connected: " + confirm)
+
 
 def joinchan(chan):
-    ircsock.send(bytes("JOIN " + chan + "\r\n", "UTF-8"))
-    ircmsg = ""
-    ircmsg.find("End of /NAMES list") ==-1
-    ircmsg = ircsock.recv(2048).decode("UTF-8")
-    ircmsg = ircmsg.strip("\n\r")
-    print(ircmsg)
-
-def sendmsg(msg, target= channel):
-    ircsock.send(bytes("PRIVMSG "+ target +" :"+msg+"\r\n", "UTF-8"))
+	print("Joining channel: " + chan)
+	ircsock.send(bytes("JOIN " + chan + "\r\n", "UTF-8"))
+	confirmJoin = ircsock.recv(2048).decode("UTF-8")
+	print("joined: " + confirmJoin)
 
 
-def ping():
+def ping():  # function that responds to server pongs to help maintain connection to server
     ircsock.send(bytes("PONG :pingisn", "UTF-8"))
+    print("Server PONGED")
 
 
-def fact(filename):
+def sendmsg(msg, target):
+    ircsock.send(bytes("PRIVMSG " + target + msg + "\r\n", "UTF-8"))
+
+def randomusr():
+    rndusr = random.choice(users)
+    return rndusr
+
+def rndfacts(filename):
     line = open(filename).read().splitlines()
     return random.choice(line)
+
 
 def main():
     connect()
     joinchan(channel)
+    while 1:  # effectively infinite while loop to maintain connection
+        name = ""
+        msg = ""
+        org = ""
+        
+        
+        ircmsg = ircsock.recv(2048).decode("UTF-8")
+        
+        print("MESSAGE: " + ircmsg)
+        ircmsg = ircmsg.strip('\r\n')
+        print(ircmsg)
 
-    ircmsg = ircsock.recv(2048).decode("UTF-8")
-    ircmsg = ircmsg.strip("\n\r")
-    print(ircmsg)
+        if ircmsg.find("PRIVMSG") !=-1:
+          name = ircmsg.split('!')[0][1:]
+          msg = ircmsg.split('PRIVMSG', 1)[1].split(':', 1)[1]
+          org = ircmsg.split('PRIVMSG', 1)[1].split(' ', 1)[0]
+          print(name,org,msg)
 
-    if ircmsg.find("PRIVMSG") != -1:
-        name = ircmsg.strip('!', 1)[0][1:]
-        message = ircmsg.split('PRIVMSG',1)[1].split(':',1)[1]
+        if len(name) < 17:
 
-        if len(name) <17:
-            if message.find('!hello') !=-1:
-                today = datetime.date.today()
-                sendmsg("Hey", name, "the date and time today is: ", today)
+            if org.lower() == channel.lower():
+            
+                if msg == "!hello":
+
+                    now = datetime.datetime.now().strftime('%d-%m-%y %H:%M')
+                    sendmsg("Hello " + name + " the date and time is" + now+  " ", channel)
+
+            if msg == "!slap":
+                slapusr = randomusr()
+                sendmsg(" " + slapusr + " was slapped by a trout", channel)
+
+                if msg[:5].find('!tell') != -1:
+                	target = msg.split(' ', 1)[1]
+                	if target.find(' ') !=-1:
+                		msg = target.split(' ',1)[1]
+                		target = target.split(' ')[0]
+
+                		sendmsg(msg,target)
+
+            if msg.rstrip() == exit:
+                  sendmsg("Quitting bot",channel)
+                  ircsock.send(bytes("QUIT \r\n", "UTF-8"))
+
+        if org.lower() == botnick.lower():
+            if msg != -1:
+                fact = rndfacts(file)
+                sendmsg(fact, name)
+
+                if msg.find("PING :") != -1:
+                    ping()
 
 
 
-
+main()
