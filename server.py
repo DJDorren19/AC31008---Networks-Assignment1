@@ -188,13 +188,13 @@ class Server:
 		#Private messages the client
 		if privateMsg:
 			#Sets up the message to be sent, JACK should be the sender's name, which could be another user or server 
-			msg = ":" + senderName + "!" + str(client.userName) + "@" + str(client.host) + " PRIVMSG " + client.nick
+			msg = ":" + senderName + "!" + str(client.userName) + "@" + str(client.host) + " PRIVMSG " + str(client.nick)
 			msg = msg+message+"\r\n"
 			connection.send(msg.encode('utf-8'))
 
 		#Notice message
 		else:
-			msg = ":" + senderName + "!" + client.userName + "@" + str(client.host) + " NOTICE "
+			msg = ":" + senderName + "!" + client.userName + "@" + str(client.host) + " NOTICE " + str(client.nick)
 			msg = msg+message+"\r\n"
 			connection.send(msg.encode('utf-8'))
 
