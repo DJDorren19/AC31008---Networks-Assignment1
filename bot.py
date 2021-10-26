@@ -22,23 +22,23 @@ parser.add_argument("--channel", help="Please enter the name of the channel", re
 parser.add_argument("--name", help="Please enter the name of the Bot", required=False, default=botnick)
 
 arg = parser.parse_args()
-server = arg.hostname
-port = arg.portnumber
-channel = arg.channelname
-botnick = arg.botname
+server = arg.host
+port = arg.port
+channel = arg.channel
+botnick = arg.name
 
 
 def connect():
     ircsock.connect((server, port))
-    ircsock.send(bytes("/USER " + botnick + "\r\n", "UTF-8"))
-    ircsock.send(bytes("/NICK " + botnick + "\r\n", "UTF-8"))
+    ircsock.send(bytes("USER " + botnick + "\r\n", "UTF-8"))
+    ircsock.send(bytes("NICK " + botnick + "\r\n", "UTF-8"))
     confirm = ircsock.recv(2048).decode("UTF-8")
     print("connected: " + confirm)
 
 
 def joinchan(chan):
     print("Joining channel: " + chan)
-    ircsock.send(bytes("/JOIN " + chan + "\r\n", "UTF-8"))
+    ircsock.send(bytes("JOIN " + chan + "\r\n", "UTF-8"))
     confirmJoin = ircsock.recv(2048).decode("UTF-8")
     print("joined: " + confirmJoin)
 
@@ -48,7 +48,9 @@ def ping():  # function that responds to server pongs to help maintain connectio
 
 
 def sendmsg(msg, target):
-    ircsock.send(bytes("/PRIVMSG " + target + msg + "\r\n", "UTF-8"))
+    temp = ("PRIVMSG " + target +" :" + msg + "\r\n")
+    ircsock.send(temp.encode("UTF-8"))
+    print("I am also here")
 
 
 def randomusr():
@@ -64,31 +66,42 @@ def rndfacts(filename):
 def main():
     connect()
     joinchan(channel)
-    while 1:  # effectively infinite while loop to maintain connection
+    while True:  # effectively infinite while loop to maintain connection
         name = ""
         msg = ""
         org = ""
+        temp = ""
+        # :qmbuser!Bot-Tom@38492 NOTICE  #test :!hello
 
         ircmsg = ircsock.recv(2048).decode("UTF-8")
 
         print("MESSAGE: " + ircmsg)
         ircmsg = ircmsg.strip('\r\n')
         print("I AM HERE: " + ircmsg)
+        temp = ("PRIVMSG " + " :" + msg + "\r\n")
+        
+        
 
-        if ircmsg.find("/PRIVMSG") != -1:
-            name = ircmsg.split('!')[0][1:]
-            msg = ircmsg.split('PRIVMSG', 1)[1].split(':', 1)[1]
-            org = ircmsg.split('PRIVMSG', 1)[1].split(' ', 1)[0]
-            print(name, org, msg)
+        if ircmsg.find("NOTICE") != -1:
+            try:
+                name = ircmsg.split('!')[0][1:]
+                msg = ircmsg.split('NOTICE', 1)[1].split(':', 1)[1]
+                org = ircmsg.split('NOTICE', 1)[1].split(' ', 1)[1].strip()
+                print(name, org, msg)
+            except:
+                print("oops")
+
 
         if len(name) < 17:
 
             if org.lower() == channel.lower():
 
-                if msg == '!hello':
+                if msg == "!hello":
+                    print("i am aslo here")
 
                     now = datetime.datetime.now().strftime('%d-%m-%y %H:%M')
-                    sendmsg("Hello " + name + " the date and time is" + now + " ", channel)
+                    ircsock.send(temp.encode("UTF-8"))
+                    sendmsg("Hello " + name + " the date and time is" + now + " ", name)
 
             if msg == "!slap":
                 slapusr = randomusr()
