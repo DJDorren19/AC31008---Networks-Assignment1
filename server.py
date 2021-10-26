@@ -361,34 +361,42 @@ class Server:
 	#Called when the JOIN command is used, should make the switch easier to read
 	def join(self, sentLines, client):
 
+		#Kind of messy doing it this way but it's 2am and my brain is fuzzy
 		newChannel = sentLines[1]
-		anyError = self.handleChannels(newChannel, client, "")
+		splitIntoChannels = newChannel.split(",")
 
-		#Clients leaves all channels
-		if newChannel == "0":
+		for diffChannels in splitIntoChannels:
+			newChannel = diffChannels
 
-			print("Exiting all Channels")
+			anyError = self.handleChannels(newChannel, client, "")
 
-			#Removes the client from all channels
-			while len(client.connectedChannels) != 0:
-				for channels in client.connectedChannels:
-					self.partClientFromChannel(channels.name, client)
-			
-		else:
-			#If there is no error with the channel name
-			if anyError == "NO_ERROR":
-				self.addClientChannel(newChannel, client)
-			
-				temp = self.getChannel(newChannel)
-				self.checkTopicError("RPL_TOPIC", client, temp, False)
+			#Clients leaves all channels
+			if newChannel == "0":
 
-				#This allows hexchat to know that the user has joined the channel
-				message = ":" + client.nick + "!" + client.userName + "@" + client.host + " JOIN " + newChannel
-				message = message +"\r\n"
-				client.connection.send(message.encode('utf-8'))
+				print("Exiting all Channels")
 
+				#Removes the client from all channels
+				while len(client.connectedChannels) != 0:
+					for channels in client.connectedChannels:
+						self.partClientFromChannel(channels.name, client)
+				
 			else:
-				self.checkChannelError(anyError, client, newChannel)
+				#If there is no error with the channel name
+				if anyError == "NO_ERROR":
+					self.addClientChannel(newChannel, client)
+
+					#Sends this so the user can see the Topic and users in channel
+					temp = self.getChannel(newChannel)
+					self.checkTopicError("RPL_TOPIC", client, temp, False)
+					self.names(sentLines, client)
+
+					#This allows hexchat to know that the user has joined the channel
+					message = ":" + client.nick + "!" + client.userName + "@" + client.host + " JOIN " + newChannel
+					message = message +"\r\n"
+					client.connection.send(message.encode('utf-8'))
+
+				else:
+					self.checkChannelError(anyError, client, newChannel)
 
 	#Called when the PART command is used, should make the switch easier to read
 	def part(self, channelNames, client):
